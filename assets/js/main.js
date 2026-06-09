@@ -1,6 +1,7 @@
 // GitHub API Configuration
 const GITHUB_USERNAME = "mokhatiri";
 const GITHUB_API_URL = `https://api.github.com/users/${GITHUB_USERNAME}/repos`;
+const ROBOT_API_URL = window.MK_BOT_API_URL || "/api/chat";
 
 // DOM Elements
 const navToggle = document.getElementById("nav-toggle");
@@ -39,12 +40,45 @@ const languageColors = {
 
 // Initialize the application
 document.addEventListener("DOMContentLoaded", () => {
+  initThemeToggle();
   initNavigation();
   initTypingEffect();
   fetchGitHubRepos();
   initContactForm();
   initScrollEffects();
+  initRobotAssistant();
+  initOrbAnimation();
 });
+
+// Light / dark theme toggle (persisted in localStorage).
+// The initial theme is set by an inline script in <head> to avoid a flash.
+function initThemeToggle() {
+  const toggle = document.getElementById("theme-toggle");
+  const root = document.documentElement;
+
+  const syncIcon = () => {
+    const icon = toggle?.querySelector("i");
+    if (icon) {
+      const isLight = root.getAttribute("data-theme") === "light";
+      icon.className = isLight ? "fas fa-sun" : "fas fa-moon";
+    }
+  };
+
+  syncIcon();
+
+  if (toggle) {
+    toggle.addEventListener("click", () => {
+      const next = root.getAttribute("data-theme") === "light" ? "dark" : "light";
+      root.setAttribute("data-theme", next);
+      try {
+        localStorage.setItem("theme", next);
+      } catch (error) {
+        console.warn("Could not persist theme:", error);
+      }
+      syncIcon();
+    });
+  }
+}
 
 // Navigation functionality
 function initNavigation() {
@@ -344,4 +378,271 @@ function initScrollEffects() {
       }
     });
   });
+}
+
+// Floating robot assistant
+function initRobotAssistant() {
+  const assistant = document.getElementById("robot-assistant");
+  const button = document.getElementById("robot-button");
+  const closeButton = document.getElementById("robot-close");
+  const chatPanel = document.getElementById("robot-chat");
+  const chatLog = document.getElementById("robot-chat-log");
+  const chatForm = document.getElementById("robot-chat-form");
+  const chatInput = document.getElementById("robot-chat-input");
+
+  if (!assistant || !button || !chatPanel || !chatLog || !chatForm || !chatInput) {
+    return;
+  }
+
+  const portfolioFacts = {
+    intro:
+      "Mohammed Khatiri is a Computer Science student focused on Artificial Intelligence and Big Data. He likes turning theory into practical, solution-driven projects.",
+    skills:
+      "Mohammed works with Python, Java, JavaScript, TypeScript, Go, C++, C, Django, Vue, Nuxt, REST APIs, Docker, Kubernetes, GitHub Actions, SQL, Pandas, NumPy, and PyTorch.",
+    ai:
+      "His AI and data interests include machine learning, data preprocessing, large-scale data analysis, PyTorch, Pandas, and NumPy.",
+    projects:
+      "The Projects section loads Mohammed's public GitHub repositories live from the GitHub API, so visitors can explore his recent work and filter it by language.",
+    contact:
+      "You can reach Mohammed at mohamed.khatiri2006@gmail.com, visit github.com/mokhatiri, or open linkedin.com/in/khatirimohammed.",
+    cv:
+      "Mohammed's CV is available from the navigation button and the About section as a downloadable PDF.",
+    linkedin:
+      "I can point visitors to Mohammed's LinkedIn profile, but querying LinkedIn directly needs OAuth, approved API access, and a secure backend. Static GitHub Pages should not store LinkedIn tokens.",
+    llm:
+      "This bot is a safe static prototype. To make me a real LLM, connect this chat form to a serverless endpoint that holds the API key and answers from approved portfolio, CV, GitHub, and LinkedIn context.",
+  };
+
+  const responseRules = [
+    { keywords: ["skill", "tech", "stack", "language", "tools"], response: portfolioFacts.skills },
+    { keywords: ["ai", "machine learning", "ml", "data", "big data", "pytorch", "pandas"], response: portfolioFacts.ai },
+    { keywords: ["project", "github", "repo", "repository"], response: portfolioFacts.projects },
+    { keywords: ["contact", "email", "hire", "reach", "linkedin"], response: portfolioFacts.contact },
+    { keywords: ["cv", "resume"], response: portfolioFacts.cv },
+    { keywords: ["linkedin", "profile"], response: portfolioFacts.linkedin },
+    { keywords: ["llm", "chatgpt", "ai bot", "backend", "api"], response: portfolioFacts.llm },
+    { keywords: ["who", "about", "mohammed", "khatiri"], response: portfolioFacts.intro },
+  ];
+
+  function setChatOpen(isOpen) {
+    assistant.classList.toggle("open", isOpen);
+    button.setAttribute("aria-expanded", String(isOpen));
+    chatPanel.setAttribute("aria-hidden", String(!isOpen));
+
+    if (isOpen) {
+      chatInput.focus();
+    }
+  }
+
+  function addMessage(message, sender) {
+    const messageEl = document.createElement("div");
+    messageEl.className = `robot-message ${sender}`;
+    messageEl.textContent = message;
+    chatLog.appendChild(messageEl);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    return messageEl;
+  }
+
+  function getBotResponse(question) {
+    const normalizedQuestion = question.toLowerCase();
+    const match = responseRules.find((rule) =>
+      rule.keywords.some((keyword) => normalizedQuestion.includes(keyword)),
+    );
+
+    if (match) {
+      return match.response;
+    }
+
+    return "I can answer from Mohammed's portfolio facts. Try asking about his skills, AI and Big Data focus, projects, GitHub, CV, contact info, or LinkedIn.";
+  }
+
+  async function getBackendResponse(question) {
+    const response = await fetch(ROBOT_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ question }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Assistant backend is unavailable");
+    }
+
+    const data = await response.json();
+
+    if (!data.answer) {
+      throw new Error("Assistant backend returned no answer");
+    }
+
+    return data.answer;
+  }
+
+  button.addEventListener("click", () => {
+    setChatOpen(!assistant.classList.contains("open"));
+  });
+
+  closeButton.addEventListener("click", () => {
+    setChatOpen(false);
+  });
+
+  chatForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const question = chatInput.value.trim();
+
+    if (!question) {
+      return;
+    }
+
+    addMessage(question, "user");
+    chatInput.value = "";
+    chatInput.disabled = true;
+    const thinkingMessage = addMessage("Thinking through Mohammed's portfolio...", "bot");
+
+    try {
+      thinkingMessage.textContent = await getBackendResponse(question);
+    } catch (error) {
+      console.warn("Robot assistant backend fallback:", error);
+      thinkingMessage.textContent = getBotResponse(question);
+    } finally {
+      chatInput.disabled = false;
+      chatInput.focus();
+    }
+  });
+
+}
+
+// A small cloud of glowing particles that lives inside the assistant button.
+// The whole cloud slowly expands and contracts ("breathes") and brightens on
+// the inhale; it energizes briefly while hovered. Drawn on a canvas with
+// additive blending, using the theme's neon accent colours. Honors
+// prefers-reduced-motion by rendering a single static frame.
+function initOrbAnimation() {
+  const button = document.getElementById("robot-button");
+  const canvas = button && button.querySelector(".particle-orb");
+  if (!button || !canvas) {
+    return;
+  }
+
+  const ctx = canvas.getContext("2d");
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Pull the two neon accent colours from the theme so the orb always matches.
+  function readColors() {
+    const css = getComputedStyle(document.documentElement);
+    const parse = (name, fallback) =>
+      (css.getPropertyValue(name).trim() || fallback).split(",").map((n) => parseFloat(n));
+    return {
+      core: parse("--neon-2-rgb", "34, 211, 238"), // cyan, bright centre
+      edge: parse("--neon-1-rgb", "124, 92, 255"), // violet, outer edge
+    };
+  }
+  let colors = readColors();
+
+  // Match the canvas to the button size at the current device pixel ratio.
+  let size = 0;
+  let radius = 0;
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    size = button.getBoundingClientRect().width;
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+    canvas.style.width = `${size}px`;
+    canvas.style.height = `${size}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    radius = size * 0.3; // leaves room for the glow to stay inside the canvas
+  }
+  resize();
+  window.addEventListener("resize", resize, { passive: true });
+
+  // Particles spread evenly across a disc, each with its own orbit + twinkle.
+  const COUNT = 46;
+  const particles = Array.from({ length: COUNT }, () => {
+    const r = Math.sqrt(Math.random()); // sqrt keeps the disc evenly filled
+    return {
+      angle: Math.random() * Math.PI * 2,
+      baseR: r,
+      spin: (Math.random() - 0.5) * 0.004,
+      twinkle: Math.random() * Math.PI * 2,
+      twSpeed: 0.02 + Math.random() * 0.03,
+      dotR: 0.9 + Math.random() * 1.6,
+      mix: r, // colour lerp: 0 = core, 1 = edge
+    };
+  });
+
+  let hovered = false;
+  let energy = 0;
+  button.addEventListener("mouseenter", () => { hovered = true; });
+  button.addEventListener("mouseleave", () => { hovered = false; });
+
+  let t = 0;
+  function draw() {
+    const cx = size / 2;
+    const cy = size / 2;
+
+    // Breathing: a slow inhale/exhale of the whole cloud + matching brightness.
+    const phase = reduceMotion ? Math.PI / 2 : t * 0.018;
+    const breathe = 1 + Math.sin(phase) * 0.16;
+    energy += ((hovered ? 1 : 0) - energy) * 0.08;
+    const scale = breathe + energy * 0.12;
+    const glow = 0.5 + (Math.sin(phase) * 0.5 + 0.5) * 0.35 + energy * 0.15;
+
+    ctx.clearRect(0, 0, size, size);
+    ctx.globalCompositeOperation = "lighter"; // additive blending = real glow
+
+    for (const p of particles) {
+      if (!reduceMotion) {
+        p.angle += p.spin * (1 + energy * 2);
+        p.twinkle += p.twSpeed;
+      }
+      const r = p.baseR * radius * scale;
+      const x = cx + Math.cos(p.angle) * r;
+      const y = cy + Math.sin(p.angle) * r;
+      const tw = 0.55 + (Math.sin(p.twinkle) * 0.5 + 0.5) * 0.45;
+
+      const cr = Math.round(colors.core[0] + (colors.edge[0] - colors.core[0]) * p.mix);
+      const cg = Math.round(colors.core[1] + (colors.edge[1] - colors.core[1]) * p.mix);
+      const cb = Math.round(colors.core[2] + (colors.edge[2] - colors.core[2]) * p.mix);
+
+      const dotR = p.dotR * (1 + energy * 0.4) * 3;
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, dotR);
+      grad.addColorStop(0, `rgba(${cr}, ${cg}, ${cb}, ${glow * tw})`);
+      grad.addColorStop(1, `rgba(${cr}, ${cg}, ${cb}, 0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(x, y, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // A soft bright core to anchor the cloud.
+    const coreR = radius * 0.6 * scale;
+    const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
+    coreGrad.addColorStop(0, `rgba(${colors.core[0]}, ${colors.core[1]}, ${colors.core[2]}, ${0.45 * glow})`);
+    coreGrad.addColorStop(1, `rgba(${colors.core[0]}, ${colors.core[1]}, ${colors.core[2]}, 0)`);
+    ctx.fillStyle = coreGrad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, coreR, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  function frame() {
+    t += 1;
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  if (reduceMotion) {
+    draw(); // single static frame, no animation loop
+  } else {
+    requestAnimationFrame(frame);
+  }
+
+  // Keep the colours in sync when the light/dark theme is toggled.
+  const themeObserver = new MutationObserver(() => {
+    colors = readColors();
+    if (reduceMotion) draw();
+  });
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 }
